@@ -1,4 +1,4 @@
-# Baseline transcriptomic state benchmarks
+# Baseline Transcriptomes Encode Context-Dependent Perturbation Outcomes
 
 Code and compact derived data for **Baseline transcriptomic states encode context-dependent information about lineage and perturbation outcomes across single-cell systems**.
 
@@ -36,7 +36,7 @@ Use `mixseq`, `axes`, `clinical` or `replogle` instead of `larry` for the other 
 
 ## Interpretation and uncertainty
 
-LARRY targets are experimentally lineage linked. MIX-seq and Replogle targets are population-level expression programs; Waddington-OT targets are expression-derived transport probabilities. Clone-condition rows, cells and patient observations have different inferential units. Bootstrap intervals hold fitted out-of-fold predictions fixed and do not include full model-retraining uncertainty. Axis nulls retain the same overlapping folds and permute outcomes within perturbation/time strata. The two reported clinical survival tests form one family; no clinical utility or causal regulator effect is established.
+LARRY targets are experimentally lineage linked. MIX-seq and Replogle targets are population-level expression programs; Waddington-OT targets are expression-derived transport probabilities. Clone-condition rows, cells and patient observations have different inferential units. Bootstrap intervals hold fitted out-of-fold predictions fixed and do not include full model-retraining uncertainty. Axis nulls retain the same overlapping folds and permute outcomes within perturbation/time strata. The two reported clinical survival tests form one family.
 
 ## Source data
 
