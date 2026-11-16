@@ -386,16 +386,16 @@ cal <- dat("calibration") %>% mutate(target=gsub("^p_","",gsub("_"," ",target)))
 dist <- dat("target_distributions") %>% mutate(target=gsub("^p_","",gsub("_"," ",target)))
 for(ds in unique(cal$dataset[grepl("LARRY",cal$dataset)])) {
  cc <- cal %>% filter(dataset==ds)
- pp <- ggplot(cc,aes(predicted,observed))+geom_abline(slope=1,intercept=0,linetype=2,colour=pal[["grey"]],linewidth=.3)+geom_line(colour=pal[["blue"]],linewidth=.4)+geom_point(aes(size=n),colour=pal[["blue"]],alpha=.8)+facet_wrap(~target,ncol=4)+coord_equal(xlim=c(0,1),ylim=c(0,1))+scale_size(range=c(.4,2),guide="none")+labs(x="Mean predicted descendant fraction",y="Mean observed descendant fraction",title=ds)+theme(strip.text=element_text(size=6))
+ pp <- ggplot(cc,aes(predicted,observed))+geom_abline(slope=1,intercept=0,linetype=2,colour=pal[["grey"]],linewidth=.3)+geom_line(colour=pal[["blue"]],linewidth=.4)+geom_point(aes(size=n),colour=pal[["blue"]],alpha=.8)+facet_wrap(~target,ncol=4)+coord_equal(xlim=c(0,1),ylim=c(0,1))+scale_size(range=c(.4,2),guide="none")+labs(x="Mean predicted descendant fraction",y="Mean observed descendant fraction",title=ds)+theme(strip.text=element_text(size=6),panel.spacing.x=unit(6,"mm"))
  save_pub(pp,file.path(ext_dir,ifelse(grepl("in_vitro",ds),"Supplementary5_larry_in_vitro_calibration","Supplementary6_larry_cytokine_calibration")),183,145)
 }
-pp <- ggplot(cal %>% filter(dataset=="MIX-seq"),aes(predicted,observed,colour=validation))+geom_abline(slope=1,intercept=0,linetype=2,colour=pal[["grey"]],linewidth=.3)+geom_line(linewidth=.4)+geom_point(size=1)+facet_wrap(~target,ncol=2)+coord_equal(xlim=c(0,1),ylim=c(0,1))+scale_colour_manual(values=c(leave_cell_line=pal[["blue"]],leave_perturbation=pal[["orange"]]),labels=c("Cell line held out","Perturbation held out"))+labs(x="Mean prediction",y="Mean observed target",colour=NULL)+theme(legend.position="bottom")
+pp <- ggplot(cal %>% filter(dataset=="MIX-seq"),aes(predicted,observed,colour=validation))+geom_abline(slope=1,intercept=0,linetype=2,colour=pal[["grey"]],linewidth=.3)+geom_line(linewidth=.4)+geom_point(size=1)+facet_wrap(~target,ncol=2)+coord_equal(xlim=c(0,1),ylim=c(0,1))+scale_colour_manual(values=c(leave_cell_line=pal[["blue"]],leave_perturbation=pal[["orange"]]),labels=c("Cell line held out","Perturbation held out"))+labs(x="Mean prediction",y="Mean observed target",colour=NULL)+theme(legend.position="bottom",panel.spacing.x=unit(6,"mm"))
 save_pub(pp,file.path(ext_dir,"Supplementary7_mixseq_calibration"),160,150)
 for(ds in unique(dist$dataset)) {
  dd <- dist %>% filter(dataset==ds, validation %in% c("clone","leave_cell_line"))
- pp <- ggplot(dd,aes(value))+geom_histogram(aes(y=after_stat(count/sum(count))),bins=20,fill=pal[["blue2"]],colour="white",linewidth=.15)+facet_wrap(~target,scales="free",ncol=4)+labs(x="Observed target",y="Fraction of all targets",title=ds)+theme(strip.text=element_text(size=5.8))
+ pp <- ggplot(dd,aes(value))+geom_histogram(aes(y=after_stat(count/sum(count))),bins=20,fill=pal[["blue2"]],colour="white",linewidth=.15)+facet_wrap(~target,scales="free",ncol=4)+labs(x="Observed target",y="Fraction of all targets",title=ds)+theme(strip.text=element_text(size=5.8),panel.spacing.x=unit(6,"mm"))
  # Each target distribution is normalized separately within its facet.
- pp <- ggplot(dd,aes(value))+geom_histogram(bins=20,fill=pal[["blue2"]],colour="white",linewidth=.15)+facet_wrap(~target,scales="free",ncol=4)+labs(x="Observed target",y="Number of targets",title=ds)+theme(strip.text=element_text(size=5.8))
+ pp <- ggplot(dd,aes(value))+geom_histogram(bins=20,fill=pal[["blue2"]],colour="white",linewidth=.15)+facet_wrap(~target,scales="free",ncol=4)+labs(x="Observed target",y="Number of targets",title=ds)+theme(strip.text=element_text(size=5.8),panel.spacing.x=unit(6,"mm"))
  fname <- if(ds=="MIX-seq") "Supplementary10_mixseq_distributions" else if(grepl("in_vitro",ds)) "Supplementary8_larry_in_vitro_distributions" else "Supplementary9_larry_cytokine_distributions"
  save_pub(pp,file.path(ext_dir,fname),183,if(ds=="MIX-seq") 75 else 160)
 }
@@ -404,7 +404,7 @@ cat("Revised manuscript figures exported.\n")
 
 extra <- read.delim(file.path(project,"results/additional_calibration.tsv"))
 extra_dist <- read.delim(file.path(project,"results/additional_distributions.tsv"))
-curve <- function(d) ggplot(d,aes(predicted,observed,colour=validation))+geom_abline(slope=1,intercept=0,linetype=2,colour=pal[["grey"]],linewidth=.3)+geom_line(linewidth=.4)+geom_point(size=.7)+coord_equal(xlim=c(0,1),ylim=c(0,1))+scale_colour_manual(values=c(replicate=pal[["blue"]],leave_cell_line=pal[["blue"]],leave_perturbation=pal[["blue"]],leave_gem_group=pal[["orange"]]))+labs(x="Mean prediction",y="Mean observed fraction",colour=NULL)+theme(legend.position="bottom")
+curve <- function(d) ggplot(d,aes(predicted,observed,colour=validation))+geom_abline(slope=1,intercept=0,linetype=2,colour=pal[["grey"]],linewidth=.3)+geom_line(linewidth=.4)+geom_point(size=.7)+coord_equal(xlim=c(0,1),ylim=c(0,1))+scale_colour_manual(values=c(replicate=pal[["blue"]],leave_cell_line=pal[["blue"]],leave_perturbation=pal[["blue"]],leave_gem_group=pal[["orange"]]))+labs(x="Mean prediction",y="Mean observed fraction",colour=NULL)+theme(legend.position="bottom",panel.spacing.x=unit(6,"mm"))
 wc <- curve(extra %>% filter(dataset=="Waddington-OT"))+facet_wrap(~target,ncol=3)+guides(colour="none")
 wd <- ggplot(extra_dist %>% filter(dataset=="Waddington-OT"),aes(value))+geom_histogram(bins=20,fill=pal[["blue2"]],colour="white",linewidth=.15)+facet_wrap(~target,ncol=3,scales="free")+labs(x="Observed transport target",y="Targets")
 save_pub(wc/wd+plot_annotation(tag_levels="a"),file.path(ext_dir,"Supplementary12_transport_calibration"),183,210)
