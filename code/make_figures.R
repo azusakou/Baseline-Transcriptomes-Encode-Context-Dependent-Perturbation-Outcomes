@@ -401,3 +401,13 @@ for(ds in unique(dist$dataset)) {
 }
 save_pub(p4e,file.path(ext_dir,"Supplementary11_velocity_eligibility"),130,85)
 cat("Revised manuscript figures exported.\n")
+
+extra <- read.delim(file.path(project,"results/additional_calibration.tsv"))
+extra_dist <- read.delim(file.path(project,"results/additional_distributions.tsv"))
+curve <- function(d) ggplot(d,aes(predicted,observed,colour=validation))+geom_abline(slope=1,intercept=0,linetype=2,colour=pal[["grey"]],linewidth=.3)+geom_line(linewidth=.4)+geom_point(size=.7)+coord_equal(xlim=c(0,1),ylim=c(0,1))+scale_colour_manual(values=c(replicate=pal[["blue"]],leave_cell_line=pal[["blue"]],leave_perturbation=pal[["blue"]],leave_gem_group=pal[["orange"]]))+labs(x="Mean prediction",y="Mean observed fraction",colour=NULL)+theme(legend.position="bottom")
+wc <- curve(extra %>% filter(dataset=="Waddington-OT"))+facet_wrap(~target,ncol=3)+guides(colour="none")
+wd <- ggplot(extra_dist %>% filter(dataset=="Waddington-OT"),aes(value))+geom_histogram(bins=20,fill=pal[["blue2"]],colour="white",linewidth=.15)+facet_wrap(~target,ncol=3,scales="free")+labs(x="Observed transport target",y="Targets")
+save_pub(wc/wd+plot_annotation(tag_levels="a"),file.path(ext_dir,"Supplementary12_transport_calibration"),183,210)
+gc <- curve(extra %>% filter(dataset!="Waddington-OT"))+facet_grid(dataset~target)+scale_colour_manual(values=c(leave_perturbation=pal[["blue"]],leave_gem_group=pal[["orange"]]),labels=c(leave_perturbation="Perturbation held out",leave_gem_group="GEM held out"))
+gd <- ggplot(extra_dist %>% filter(dataset!="Waddington-OT"),aes(value))+geom_histogram(bins=20,fill=pal[["blue2"]],colour="white",linewidth=.15)+facet_grid(dataset~target,scales="free_y")+labs(x="Observed program fraction",y="Pairs")
+save_pub(gc/gd+plot_annotation(tag_levels="a"),file.path(ext_dir,"Supplementary13_genetic_calibration"),183,205)

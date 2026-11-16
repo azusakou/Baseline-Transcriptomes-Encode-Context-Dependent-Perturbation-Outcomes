@@ -357,7 +357,6 @@ def replogle():
     output=[]
     for cell,folder in [('K562','replogle_k562_future_fate'),('RPE1','replogle_rpe1_generalization')]:
         d=pd.read_parquet(PROJECT/'results'/folder/'predictions.parquet')
-        table=pd.read_parquet(PROJECT/'results'/folder/'modeling_table.parquet')
         for (validation,target),f in d.groupby(['validation','target']):
             wide=f.pivot(index=['pair_id','observed'],columns='model',values='predicted').reset_index()
             split=wide.pair_id.str.split('|')
