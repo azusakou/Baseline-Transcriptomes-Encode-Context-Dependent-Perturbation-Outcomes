@@ -82,9 +82,9 @@ save_pub <- function(plot, filename, width_mm=183, height_mm=145, dpi=300) {
   selection <- strsplit(Sys.getenv("FIGURE_SELECTION", ""), ",", fixed = TRUE)[[1]]
   if (length(selection) && nzchar(selection[1]) && !base %in% selection) return(invisible(NULL))
   if(base %in% names(aliases)) filename <- file.path(dirname(filename), aliases[[base]])
-  if (base %in% c("Figure4_mechanism_axes", "Figure5_spatial_niches", "Figure6_patient_fate_embedding") && capabilities("aqua")) {
+  if (base %in% c("Figure1_study_design", "Figure4_mechanism_axes", "Figure5_spatial_niches", "Figure6_patient_fate_embedding") && capabilities("aqua")) {
     grDevices::quartz(type="pdf",file=paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica")
-  } else if (base %in% c("Figure4_mechanism_axes", "Figure5_spatial_niches", "Figure6_patient_fate_embedding") && capabilities("cairo")) {
+  } else if (base %in% c("Figure1_study_design", "Figure4_mechanism_axes", "Figure5_spatial_niches", "Figure6_patient_fate_embedding") && capabilities("cairo")) {
     grDevices::cairo_pdf(paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica")
   } else {
     grDevices::pdf(paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica",useDingbats=FALSE)
@@ -111,43 +111,56 @@ tile_text_plot <- function(data, x, y, fill, label = NULL, low = pal[["red2"]], 
 }
 
 # Figure 1 -------------------------------------------------------------------
-inv <- read_src("figure1", "dataset_scale_and_evidence")
-inv$evidence_tier <- gsub("gold lineage supervision", "lineage-linked", inv$evidence_tier)
-inv$evidence_tier <- gsub("silver transport supervision", "transport-derived", inv$evidence_tier)
-inv$qc_or_target_numeric[grepl("BeatAML", inv$dataset)] <- 317
-ood <- read_src("figure1", "ood_validation_contract")
-
-inv_plot <- inv %>% filter(is.finite(input_numeric), !grepl("post-treatment", dataset)) %>%
-  mutate(dataset = factor(dataset, levels = rev(dataset)), evidence_tier = gsub(" probability", "", evidence_tier))
-p1b <- ggplot(inv_plot, aes(input_numeric, dataset, colour = evidence_tier)) +
-  geom_segment(aes(x = pmax(qc_or_target_numeric, 1), xend = input_numeric, yend = dataset), colour = pal[["light"]], linewidth = 1.2) +
-  geom_point(aes(x = pmax(qc_or_target_numeric, 1)), shape = 21, fill = "white", size = 2.1, stroke = .65) +
-  geom_point(size = 1.9) + scale_x_log10(labels = label_number(scale_cut = cut_si(""))) +
-  scale_colour_manual(values = c("lineage-linked" = pal[["teal"]], "transport-derived" = pal[["violet"]],
-                                  "derived program" = pal[["blue"]], "genetic derived program" = pal[["blue2"]],
-                                  "spatial exploratory" = pal[["orange"]], "clinical projection" = pal[["red"]])) +
-  labs(x = "Input and analysed units (log scale)", y = NULL, colour = "Evidence tier") + theme(legend.position = "bottom")
-
-ood <- ood %>% mutate(validation = factor(validation, levels = c("leave-cell-line", "leave-perturbation", "leave-task", "leave-dataset")))
-p1c <- ggplot(ood, aes(x = validation, y = 1, fill = validation)) +
-  geom_tile(width = .88, height = .52, colour = "white", linewidth = .5) +
-  geom_text(aes(label = held_out_unit), size = 1.8, lineheight = .9) +
-  scale_fill_manual(values = c(pal[["blue2"]], pal[["teal2"]], "#DDD2EA", pal[["red2"]])) +
-  scale_y_continuous(NULL, breaks = NULL) + labs(x = NULL) +
-  theme(axis.line = element_blank(), axis.ticks = element_blank(), axis.text.x = element_text(face = "bold", angle = 22, hjust = 1, size = 6), legend.position = "none")
-
-tier_counts <- inv_plot %>% count(evidence_tier)
-p1d <- ggplot(tier_counts, aes(n, reorder(evidence_tier, n), fill = evidence_tier)) +
-  geom_col(width = .62) + geom_text(aes(label = n), hjust = -0.4, size = 2) +
-  scale_fill_manual(values = c("lineage-linked" = pal[["teal"]], "transport-derived" = pal[["violet"]],
-                               "derived program" = pal[["blue"]], "genetic derived program" = pal[["blue2"]],
-                               "spatial exploratory" = pal[["orange"]], "clinical projection" = pal[["red"]])) +
-  scale_x_continuous(expand = expansion(mult = c(0, .18)), breaks = 0:4) + labs(x = "Data sources", y = NULL) + theme(legend.position = "none")
-
-p1b <- p1b + theme(legend.position = "none")
-fig1 <- p1b + p1c + p1d + plot_layout(design = "AB
-AC", widths = c(1, 1.08), heights = c(.8, 1)) +
-  plot_annotation(tag_levels = "a")
+evidence <- read.delim(file.path(project, "results", "figure1_evidence_map.tsv"),
+                      check.names = FALSE, na.strings = character()) %>%
+  mutate(y = seq(78, 14, length.out = n()),
+         target_label = format(targets, big.mark = ",", trim = TRUE, scientific = FALSE),
+         profile_label = ifelse(profile_unit %in% c("patients", "diagnostic patients"),
+                                "Clinical response",
+                                paste0(evidence, "  |  ", format(profile_count, big.mark = ",", trim = TRUE), " ", profile_unit)))
+evidence_colours <- c(`Lineage-linked` = pal[["teal"]], `Population-level` = pal[["blue"]],
+                      `Transport-derived` = pal[["violet"]], Spatial = pal[["orange"]], Clinical = pal[["red"]])
+axes <- data.frame(axis = c("Clone", "Cell line", "Intervention", "GEM", "Task", "Dataset", "Replicate", "Patient"),
+                   x = seq(.674, .960, length.out = 8))
+holdouts <- bind_rows(
+  evidence %>% select(source, evidence, y, within_source_holdouts) %>%
+    rename(axis = within_source_holdouts) %>% mutate(kind = "Within source"),
+  evidence %>% select(source, evidence, y, transfer_holdouts) %>%
+    rename(axis = transfer_holdouts) %>% mutate(kind = "Transfer")
+) %>% separate_rows(axis, sep = ";") %>% filter(nzchar(axis)) %>% left_join(axes, by = "axis")
+stopifnot(!anyNA(holdouts$x), nrow(evidence) == 9)
+fig1 <- ggplot() +
+  geom_hline(yintercept = c(82, seq(74, 10, by = -8)), colour = "#E5E8EB", linewidth = .25) +
+  geom_segment(data = evidence, aes(x = .016, xend = .016, y = y - 2.5, yend = y + 2.5, colour = evidence),
+               linewidth = 1.1, lineend = "round") +
+  geom_text(data = evidence, aes(x = .035, y = y + 1.4, label = source), hjust = 0,
+            size = 2.7, fontface = "bold", colour = pal[["ink"]]) +
+  geom_text(data = evidence, aes(x = .035, y = y - 1.6, label = profile_label), hjust = 0,
+            size = 2.25, colour = "#666C74") +
+  geom_text(data = evidence, aes(x = .438, y = y, label = target_label), hjust = 1,
+            size = 2.9, fontface = "bold", colour = pal[["ink"]]) +
+  geom_text(data = evidence, aes(x = .457, y = y, label = target_unit), hjust = 0,
+            size = 2.45, colour = pal[["ink"]]) +
+  geom_point(data = tidyr::crossing(y = evidence$y, x = axes$x), aes(x, y),
+             shape = 16, size = .55, colour = "#D7DCE1") +
+  geom_point(data = holdouts %>% filter(kind == "Within source"), aes(x, y, colour = evidence),
+             shape = 16, size = 2.2) +
+  geom_point(data = holdouts %>% filter(kind == "Transfer"), aes(x, y, colour = evidence),
+             shape = 21, fill = "white", size = 2.2, stroke = .65) +
+  geom_text(data = axes, aes(x = x - .004, y = 84, label = axis), angle = 55, hjust = 0,
+            size = 2.35, colour = pal[["ink"]]) +
+  annotate("text", x = c(.012, .370, .650), y = 100, label = c("a", "b", "c"),
+           hjust = 0, size = 3.1, fontface = "bold") +
+  annotate("text", x = c(.035, .395, .675), y = 100,
+           label = c("Evidence sources", "Prediction targets", "Held-out groups"),
+           hjust = 0, size = 2.85, fontface = "bold", colour = pal[["ink"]]) +
+  annotate("point", x = .650, y = 4.5, shape = 16, size = 1.8, colour = "#4A5159") +
+  annotate("text", x = .665, y = 4.5, label = "Within source", hjust = 0, size = 2.25, colour = "#4A5159") +
+  annotate("point", x = .826, y = 4.5, shape = 21, fill = "white", size = 1.8, stroke = .6, colour = "#4A5159") +
+  annotate("text", x = .841, y = 4.5, label = "Transfer", hjust = 0, size = 2.25, colour = "#4A5159") +
+  scale_colour_manual(values = evidence_colours, guide = "none") +
+  coord_cartesian(xlim = c(0, 1.015), ylim = c(0, 104), expand = FALSE, clip = "off") +
+  theme_void(base_family = "Helvetica") + theme(plot.margin = margin(1, 1, 1, 1))
 save_pub(fig1, file.path(main_dir, "Figure1_study_design"), 183, 118)
 
 # Figure 2 -------------------------------------------------------------------
@@ -233,7 +246,7 @@ p3e <- ggplot(held, aes(fate, baseline_state_increment, fill = cell_line)) + geo
   scale_fill_manual(values = c(K562 = pal[["blue2"]], RPE1 = pal[["teal2"]])) +
   labs(x = NULL, y = "Held-GEM correlation increment", fill = NULL) + theme(legend.position = "bottom")
 
-fig3 <- (p3a | p3b) / (p3c | p3d) / p3e + plot_layout(heights = c(.9, 1.05, .82)) +
+fig3 <- (p3a | p3b) / (p3c | p3d) / patchwork::free(p3e, type = "label", side = "l") + plot_layout(heights = c(.9, 1.05, .82)) +
   plot_annotation(tag_levels = "a")
 save_pub(fig3, file.path(main_dir, "Figure3_generalization"), 183, 155)
 
