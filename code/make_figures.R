@@ -78,7 +78,10 @@ scale_y_reordered <- function(...) {
 
 save_pub <- function(plot, filename, width_mm=183, height_mm=145, dpi=300) {
   aliases <- c(Figure1_study_design="Figure1 study design",Figure2_lineage_prediction="Figure2 lineage prediction",Figure3_generalization="Figure3 generalization",Figure4_mechanism_axes="Figure4 mechanism axes",Figure5_spatial_niches="Figure5 spatial niches",Figure6_patient_fate_embedding="Figure6 patient fate embedding")
-  base <- basename(filename); if(base %in% names(aliases)) filename <- file.path(dirname(filename), aliases[[base]])
+  base <- basename(filename)
+  selection <- strsplit(Sys.getenv("FIGURE_SELECTION", ""), ",", fixed = TRUE)[[1]]
+  if (length(selection) && nzchar(selection[1]) && !base %in% selection) return(invisible(NULL))
+  if(base %in% names(aliases)) filename <- file.path(dirname(filename), aliases[[base]])
   grDevices::pdf(paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica",useDingbats=FALSE)
   print(plot);dev.off()
   ragg::agg_png(file.path(main_dir,paste0(basename(filename),".png")),width=width_mm/25.4,height=height_mm/25.4,units="in",res=200,background="white")
@@ -108,22 +111,6 @@ inv$evidence_tier <- gsub("silver transport supervision", "transport-derived", i
 inv$qc_or_target_numeric[grepl("BeatAML", inv$dataset)] <- 317
 ood <- read_src("figure1", "ood_validation_contract")
 
-nodes <- data.frame(
-  x = c(0.7, 2.35, 4.05, 5.75), y = 1,
-  label = c("Baseline cells\nstate distribution", "Baseline-only\nlatent state z0", "Probability heads\nP(fate | z0,p,t)", "Future outcomes\nbranch / program / patient"),
-  type = c("baseline", "model", "model", "future")
-)
-p1a <- ggplot(nodes, aes(x, y)) +
-  geom_rect(aes(xmin = x - .62, xmax = x + .62, ymin = y - .34, ymax = y + .34, fill = type), colour = pal[["ink"]], linewidth = .35) +
-  geom_text(aes(label = label), size = 2.05, lineheight = .92) +
-  geom_segment(data = data.frame(x = c(1.34, 2.99, 4.69), xend = c(1.72, 3.41, 5.07), y = 1, yend = 1),
-               aes(x = x, xend = xend, y = y, yend = yend), inherit.aes = FALSE,
-               arrow = arrow(length = unit(1.8, "mm")), linewidth = .45, colour = pal[["grey"]]) +
-  annotate("rect", xmin = 3.28, xmax = 4.80, ymin = .35, ymax = .48, fill = pal[["red2"]], colour = NA) +
-  annotate("text", x = 4.04, y = .20, label = "treated expression excluded from predictors", colour = pal[["red"]], size = 1.8) +
-  scale_fill_manual(values = c(baseline = pal[["teal2"]], model = pal[["blue2"]], future = pal[["red2"]])) +
-  coord_cartesian(xlim = c(0, 6.5), ylim = c(0, 1.6), clip = "off") + theme_void(base_family = "Helvetica") + theme(legend.position = "none")
-
 inv_plot <- inv %>% filter(is.finite(input_numeric), !grepl("post-treatment", dataset)) %>%
   mutate(dataset = factor(dataset, levels = rev(dataset)), evidence_tier = gsub(" probability", "", evidence_tier))
 p1b <- ggplot(inv_plot, aes(input_numeric, dataset, colour = evidence_tier)) +
@@ -151,22 +138,16 @@ p1d <- ggplot(tier_counts, aes(n, reorder(evidence_tier, n), fill = evidence_tie
                                "spatial exploratory" = pal[["orange"]], "clinical projection" = pal[["red"]])) +
   scale_x_continuous(expand = expansion(mult = c(0, .18)), breaks = 0:4) + labs(x = "Data sources", y = NULL) + theme(legend.position = "none")
 
-fig1 <- p1a + p1b + p1c + p1d + plot_layout(design = "AAAA\nBBCC\nBBDD", heights = c(1.0, .82, .82)) +
+p1b <- p1b + theme(legend.position = "none")
+fig1 <- p1b + p1c + p1d + plot_layout(design = "AB
+AC", widths = c(1, 1.08), heights = c(.8, 1)) +
   plot_annotation(tag_levels = "a")
-save_pub(fig1, file.path(main_dir, "Figure1_study_design"), 183, 148)
+save_pub(fig1, file.path(main_dir, "Figure1_study_design"), 183, 118)
 
 # Figure 2 -------------------------------------------------------------------
 branch <- read_src("figure2", "larry_branch_fold_metrics") %>% mutate(model = clean_model(model))
 scalar <- read_src("figure2", "larry_scalar_fold_metrics") %>% mutate(model = clean_model(model), target = clean_fate(target))
 lineage_scale <- read_src("figure2", "larry_lineage_scale")
-
-p2a <- ggplot() +
-  annotate("rect", xmin = c(.2, 1.65, 3.1), xmax = c(1.15, 2.6, 4.4), ymin = .65, ymax = 1.35,
-           fill = c(pal[["teal2"]], pal[["blue2"]], pal[["red2"]]), colour = pal[["ink"]], linewidth = .35) +
-  annotate("text", x = c(.675, 2.125, 3.75), y = 1, label = c("Baseline clone\nexpression", "Clone-held-out\npredictor", "Descendant branch\nprobabilities"), size = 2) +
-  annotate("segment", x = c(1.18, 2.63), xend = c(1.58, 3.03), y = 1, yend = 1, arrow = arrow(length = unit(1.5, "mm")), colour = pal[["grey"]]) +
-  annotate("text", x = 2.3, y = .35, label = "clones, not cells, define outer folds", colour = pal[["red"]], size = 1.8) +
-  coord_cartesian(xlim = c(0, 4.6), ylim = c(.15, 1.55)) + theme_void()
 
 branch_macro <- branch %>% filter(branch == "macro", metric %in% c("brier", "top_branch_accuracy"))
 branch_sum <- mean_ci(branch_macro, c("experiment", "model", "metric"))
@@ -198,9 +179,9 @@ p2e <- ggplot(scalar_mae, aes(improvement, target, colour = experiment)) +
   scale_colour_manual(values = c("in vitro" = pal[["blue"]], cytokine = pal[["teal"]])) +
   labs(x = "MAE improvement over training mean", y = NULL) + guides(colour = "none") + theme(legend.position = "none")
 
-fig2 <- (p2a | p2b) / (p2c | p2d) / p2e + plot_layout(heights = c(.82, 1, 1)) +
+fig2 <- (p2b | p2c) / (p2d | p2e) + plot_layout(heights = c(1, 1.08)) +
   plot_annotation(tag_levels = "a")
-save_pub(fig2, file.path(main_dir, "Figure2_lineage_prediction"), 183, 150)
+save_pub(fig2, file.path(main_dir, "Figure2_lineage_prediction"), 183, 126)
 
 # Figure 3 -------------------------------------------------------------------
 mix <- read_src("figure3", "mixseq_generalization_summary") %>% mutate(
@@ -365,10 +346,6 @@ save_pub(edfig5,file.path(ext_dir,"ExtendedData5_spatial_audit"),183,105)
 dat <- function(name) read.delim(file.path(project,"results",paste0(name,".tsv")),check.names=FALSE)
 cohort_name <- function(x) recode(x,ispy2="I-SPY2",beataml="BeatAML")
 model_name <- function(x) recode(x,PFE="PFE",clinical="Clinical",clinical_plus_PFE="Clinical + PFE",five_gene="Five genes",clinical_plus_five_gene="Clinical + five genes")
-p6a <- ggplot() +
- annotate("rect",xmin=c(.1,1.4,2.7),xmax=c(1,2.3,3.8),ymin=.7,ymax=1.35,fill=c(pal[["teal2"]],pal[["blue2"]],pal[["red2"]]),colour=pal[["ink"]],linewidth=.35)+
- annotate("text",x=c(.55,1.85,3.25),y=1.02,label=c("Discovery axes\nand weights","Patient\nembedding","Held-out\nresponse"),size=1.9)+
- annotate("segment",x=c(1.02,2.32),xend=c(1.37,2.67),y=1.02,yend=1.02,arrow=arrow(length=unit(1.4,"mm")),colour=pal[["grey"]])+coord_cartesian(xlim=c(0,4),ylim=c(.55,1.5))+theme_void()
 clinical <- dat("clinical_bootstrap") %>% filter(metric=="auroc") %>% mutate(cohort=cohort_name(cohort),model=model_name(model))
 p6b <- ggplot(clinical,aes(estimate,model,colour=cohort))+geom_vline(xintercept=.5,linetype=2,colour=pal[["light"]])+geom_errorbar(aes(xmin=ci_low,xmax=ci_high),orientation="y",width=.18,position=position_dodge(width=.45),linewidth=.4)+geom_point(size=1.4,position=position_dodge(width=.45))+scale_colour_manual(values=c(`I-SPY2`=pal[["blue"]],BeatAML=pal[["teal"]]))+labs(x="Pooled out-of-fold AUROC (95% CI)",y=NULL,colour=NULL)+theme(legend.position="bottom",axis.text.y=element_text(size=6.4))
 ann <- dat("clinical_annotation_response") %>% mutate(cohort=cohort_name(cohort),label=gsub("−","-",label)) %>% filter(n>=10)
@@ -378,8 +355,8 @@ chance <- data.frame(cohort=c("I-SPY2","BeatAML"),metric="AP",reference=c(319/98
 p6d <- ggplot(cv,aes(cohort,value,colour=cohort))+geom_hline(data=chance,aes(yintercept=reference,colour=cohort),linetype=2,linewidth=.4)+geom_boxplot(width=.52,outlier.shape=NA,linewidth=.4)+geom_point(position=position_jitter(width=.08,seed=20261116),size=.75)+facet_wrap(~metric)+scale_colour_manual(values=c(`I-SPY2`=pal[["blue"]],BeatAML=pal[["teal"]]))+labs(x=NULL,y="Fivefold PFE response metric")+theme(legend.position="none",axis.text.x=element_text(angle=25,hjust=1,size=6))
 surv <- dat("clinical_survival") %>% filter(term=="response_coordinate") %>% mutate(label=ifelse(model=="unadjusted",paste0("Unadjusted (n=",n,")"),paste0("Age + ELN adjusted (n=",n,")")))
 p6e <- ggplot(surv,aes(estimate,label))+geom_vline(xintercept=1,linetype=2,colour=pal[["grey"]])+geom_errorbar(aes(xmin=ci_low,xmax=ci_high),orientation="y",width=.16,linewidth=.45,colour=pal[["teal"]])+geom_point(size=1.8,colour=pal[["teal"]])+scale_x_log10(breaks=c(.6,.8,1,1.2))+labs(x="BeatAML survival hazard ratio per SD (95% CI)",y=NULL)
-fig6 <- p6a+p6b+p6c+p6d+p6e+plot_layout(design="AABB\nCCDD\nEEEE",heights=c(.95,1.15,.6))+plot_annotation(tag_levels="a")
-save_pub(fig6,file.path(main_dir,"Figure6_patient_fate_embedding"),183,160)
+fig6 <- p6b+p6c+p6d+p6e+plot_layout(design="AAAA\nBBCC\nDDDD",heights=c(1.05,1.25,.65))+plot_annotation(tag_levels="a")
+save_pub(fig6,file.path(main_dir,"Figure6_patient_fate_embedding"),183,146)
 
 # Supplementary calibration: binned means describe fractional branch targets.
 cal <- dat("calibration") %>% mutate(target=gsub("^p_","",gsub("_"," ",target)))
