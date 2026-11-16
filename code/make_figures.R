@@ -82,9 +82,9 @@ save_pub <- function(plot, filename, width_mm=183, height_mm=145, dpi=300) {
   selection <- strsplit(Sys.getenv("FIGURE_SELECTION", ""), ",", fixed = TRUE)[[1]]
   if (length(selection) && nzchar(selection[1]) && !base %in% selection) return(invisible(NULL))
   if(base %in% names(aliases)) filename <- file.path(dirname(filename), aliases[[base]])
-  if (base %in% c("Figure2_lineage_prediction", "Figure3_generalization", "Figure4_mechanism_axes", "Figure5_spatial_niches") && capabilities("aqua")) {
+  if (base %in% c("Figure4_mechanism_axes", "Figure5_spatial_niches", "Figure6_patient_fate_embedding") && capabilities("aqua")) {
     grDevices::quartz(type="pdf",file=paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica")
-  } else if (base %in% c("Figure2_lineage_prediction", "Figure3_generalization", "Figure4_mechanism_axes", "Figure5_spatial_niches") && capabilities("cairo")) {
+  } else if (base %in% c("Figure4_mechanism_axes", "Figure5_spatial_niches", "Figure6_patient_fate_embedding") && capabilities("cairo")) {
     grDevices::cairo_pdf(paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica")
   } else {
     grDevices::pdf(paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica",useDingbats=FALSE)
@@ -151,175 +151,91 @@ AC", widths = c(1, 1.08), heights = c(.8, 1)) +
 save_pub(fig1, file.path(main_dir, "Figure1_study_design"), 183, 118)
 
 # Figure 2 -------------------------------------------------------------------
-revision_dir <- file.path(project, "results")
-figure23_theme <- theme_nc(7.5) + theme(
-  plot.title = element_text(size = 8.2, face = "bold", margin = margin(b = 5)),
-  axis.title = element_text(size = 7.5), axis.text = element_text(size = 7),
-  legend.text = element_text(size = 6.8), legend.title = element_blank(),
-  legend.key.width = unit(4, "mm"), legend.key.height = unit(3, "mm"),
-  plot.margin = margin(4, 5, 3, 3)
-)
-experiment_colours <- c(`In vitro` = pal[["blue"]], Cytokine = pal[["teal"]])
-experiment_scale <- function() scale_colour_manual(values = experiment_colours, breaks = names(experiment_colours))
-method_levels <- c("Training mean", "Early annotation", "15-nearest neighbours", "Baseline-state ridge")
-comp2 <- read.delim(file.path(revision_dir, "larry_comparators.tsv")) %>%
-  filter(mode == "original", metric %in% c("brier", "accuracy"),
-    model %in% c("ridge", "knn", "earliest_annotation", "training_mean")) %>%
-  mutate(experiment = recode(dataset, in_vitro = "In vitro", cytokine = "Cytokine"),
-    method = factor(recode(model, ridge = "Baseline-state ridge", knn = "15-nearest neighbours",
-      earliest_annotation = "Early annotation", training_mean = "Training mean"), levels = method_levels),
-    y = as.numeric(method) + ifelse(experiment == "In vitro", .14, -.14))
-comp2_summary <- mean_ci(comp2, c("experiment", "method", "metric", "y"))
-composition_plot <- function(metric_name, title, xlabel) {
-  raw <- filter(comp2, metric == metric_name)
-  avg <- filter(comp2_summary, metric == metric_name)
-  ggplot(raw, aes(value, y, colour = experiment)) +
-    geom_point(size = .75, alpha = .35,
-      position = position_jitter(width = 0, height = .035, seed = 201)) +
-    geom_errorbar(data = avg, aes(x = mean, xmin = mean - ci, xmax = mean + ci),
-      orientation = "y", width = .10, linewidth = .45) +
-    geom_point(data = avg, aes(x = mean), shape = 18, size = 2.3) +
-    scale_y_continuous(breaks = 1:4, labels = method_levels, limits = c(.55, 4.45), expand = c(0, 0)) +
-    scale_x_continuous(breaks = scales::breaks_pretty(n = 4), expand = expansion(mult = c(.08, .08))) +
-    experiment_scale() + labs(x = xlabel, y = NULL, colour = NULL, title = title) +
-    figure23_theme + theme(legend.position = "none", axis.line.y = element_blank(), axis.ticks.y = element_blank())
-}
-p2a <- composition_plot("brier", "Descendant composition", "Macro Brier score")
-p2b <- composition_plot("accuracy", "Dominant descendant branch", "Top-branch accuracy")
+branch <- read_src("figure2", "larry_branch_fold_metrics") %>% mutate(model = clean_model(model))
+scalar <- read_src("figure2", "larry_scalar_fold_metrics") %>% mutate(model = clean_model(model), target = clean_fate(target))
+lineage_scale <- read_src("figure2", "larry_lineage_scale")
 
-scalar2 <- read_src("figure2", "larry_scalar_fold_metrics") %>%
-  mutate(experiment = recode(experiment, `in vitro` = "In vitro", cytokine = "Cytokine"),
-    outcome = recode(target, clone_expansion = "Clone expansion", p_differentiation = "Differentiation",
-      p_rare_fate = "Rare fate", transition_entropy = "Entropy"))
-outcome2_levels <- c("Entropy", "Rare fate", "Differentiation", "Clone expansion")
-corr2 <- scalar2 %>% filter(metric == "spearman", model == "baseline_latent_ridge") %>%
-  mutate(outcome = factor(outcome, levels = outcome2_levels),
-    y = as.numeric(outcome) + ifelse(experiment == "In vitro", .14, -.14))
-corr2_summary <- mean_ci(corr2, c("experiment", "outcome", "y"))
-p2c <- ggplot(corr2, aes(value, y, colour = experiment)) +
-  geom_vline(xintercept = 0, linetype = 2, linewidth = .35, colour = "#B5BAC0") +
-  geom_point(size = .8, alpha = .4, position = position_jitter(width = 0, height = .035, seed = 202)) +
-  geom_errorbar(data = corr2_summary, aes(x = mean, xmin = mean - ci, xmax = mean + ci),
-    orientation = "y", width = .10, linewidth = .45) +
-  geom_point(data = corr2_summary, aes(x = mean), shape = 18, size = 2.3) +
-  scale_y_continuous(breaks = 1:4, labels = outcome2_levels, limits = c(.55, 4.45), expand = c(0, 0)) +
-  scale_x_continuous(limits = c(-.04, .78), breaks = seq(0, .6, .2)) + experiment_scale() +
-  labs(x = "Held-clone Spearman correlation", y = NULL, colour = NULL, title = "Scalar descendant outcomes") +
-  figure23_theme + theme(legend.position = "bottom", axis.line.y = element_blank(), axis.ticks.y = element_blank())
+branch_macro <- branch %>% filter(branch == "macro", metric %in% c("brier", "top_branch_accuracy"))
+branch_sum <- mean_ci(branch_macro, c("experiment", "model", "metric"))
+p2b <- ggplot(branch_sum %>% filter(metric == "brier"), aes(model, mean, fill = model)) +
+  geom_col(width = .62) + geom_errorbar(aes(ymin = mean - ci, ymax = mean + ci), width = .15, linewidth = .35) +
+  geom_point(data = branch_macro %>% filter(metric == "brier"), aes(y = value), position = position_jitter(width = .08), size = .65, inherit.aes = TRUE) +
+  facet_wrap(~experiment) + scale_fill_manual(values = c("baseline latent" = pal[["blue"]], "training mean" = pal[["light"]])) +
+  labs(x = NULL, y = "Macro Brier score") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = "bottom")
+p2c <- ggplot(branch_sum %>% filter(metric == "top_branch_accuracy"), aes(model, mean, fill = model)) +
+  geom_col(width = .62) + geom_errorbar(aes(ymin = mean - ci, ymax = mean + ci), width = .15, linewidth = .35) +
+  geom_point(data = branch_macro %>% filter(metric == "top_branch_accuracy"), aes(y = value), position = position_jitter(width = .08), size = .65) +
+  facet_wrap(~experiment) + scale_fill_manual(values = c("baseline latent" = pal[["blue"]], "training mean" = pal[["light"]])) +
+  labs(x = NULL, y = "Top-branch accuracy") + theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), legend.position = "none")
 
-mae2 <- scalar2 %>% filter(metric == "mae") %>% select(experiment, fold, outcome, model, value) %>%
-  pivot_wider(names_from = model, values_from = value) %>%
-  mutate(value = training_mean - baseline_latent_ridge,
-    outcome = factor(outcome, levels = rev(outcome2_levels)),
-    y = ifelse(experiment == "In vitro", 2, 1))
-mae2_summary <- mean_ci(mae2, c("experiment", "outcome", "y"))
-p2d <- ggplot(mae2, aes(value, y, colour = experiment)) +
-  geom_vline(xintercept = 0, linetype = 2, linewidth = .35, colour = "#B5BAC0") +
-  geom_point(size = .8, alpha = .4, position = position_jitter(width = 0, height = .045, seed = 203)) +
-  geom_errorbar(data = mae2_summary, aes(x = mean, xmin = mean - ci, xmax = mean + ci),
-    orientation = "y", width = .12, linewidth = .45) +
-  geom_point(data = mae2_summary, aes(x = mean), shape = 18, size = 2.3) +
-  facet_wrap(~outcome, scales = "free_x", nrow = 1) +
-  scale_y_continuous(breaks = c(1, 2), labels = c("Cytokine", "In vitro"), limits = c(.55, 2.45)) +
-  scale_x_continuous(breaks = scales::breaks_pretty(n = 3), labels = label_number(), expand = expansion(mult = .10)) +
-  experiment_scale() + labs(x = "MAE reduction over the training mean", y = NULL, colour = NULL, title = "Absolute-error gains by outcome") +
-  figure23_theme + theme(legend.position = "none", strip.text = element_text(size = 7.3, face = "bold"),
-    axis.line.y = element_blank(), axis.ticks.y = element_blank(), panel.spacing.x = unit(5, "mm"))
+scalar_corr <- scalar %>% filter(metric == "spearman", model == "baseline latent")
+p2d <- ggplot(scalar_corr, aes(value, target, colour = experiment)) +
+  geom_vline(xintercept = 0, linetype = 2, colour = pal[["grey"]], linewidth = .3) +
+  geom_point(alpha = .55, size = .75, position = position_jitter(height = .09)) +
+  stat_summary(fun = mean, geom = "point", size = 2.0, shape = 18, position = position_dodge(width = .25)) +
+  scale_colour_manual(values = c("in vitro" = pal[["blue"]], cytokine = pal[["teal"]])) +
+  labs(x = "Held-clone Spearman correlation", y = NULL, colour = NULL) + theme(legend.position = "bottom")
 
-fig2 <- p2a + p2b + p2c + p2d +
-  plot_layout(design = "AABB\nCCCC\nDDDD", heights = c(1.12, 1.02, .84)) +
+scalar_mae <- scalar %>% filter(metric == "mae") %>% select(experiment, fold, target, model, value) %>%
+  pivot_wider(names_from = model, values_from = value) %>% mutate(improvement = `training mean` - `baseline latent`)
+p2e <- ggplot(scalar_mae, aes(improvement, target, colour = experiment)) +
+  geom_vline(xintercept = 0, linetype = 2, colour = pal[["grey"]], linewidth = .3) +
+  geom_point(alpha = .55, size = .75, position = position_jitter(height = .09)) +
+  stat_summary(fun = mean, geom = "point", size = 2.0, shape = 18, position = position_dodge(width = .25)) +
+  scale_colour_manual(values = c("in vitro" = pal[["blue"]], cytokine = pal[["teal"]])) +
+  labs(x = "MAE improvement over training mean", y = NULL) + guides(colour = "none") + theme(legend.position = "none")
+
+fig2 <- (p2b | p2c) / (p2d | p2e) + plot_layout(heights = c(1, 1.08)) +
   plot_annotation(tag_levels = "a")
-save_pub(fig2, file.path(main_dir, "Figure2_lineage_prediction"), 183, 151)
+save_pub(fig2, file.path(main_dir, "Figure2_lineage_prediction"), 183, 126)
 
 # Figure 3 -------------------------------------------------------------------
-holdout_colours <- c(`Cell line` = pal[["teal"]], Perturbation = pal[["blue"]], `GEM group` = pal[["red"]])
-holdout_shapes <- c(`Cell line` = 17, Perturbation = 16, `GEM group` = 15)
-holdout_scale <- function() scale_colour_manual(values = holdout_colours, limits = names(holdout_colours), drop = FALSE)
-holdout_shape_scale <- function() scale_shape_manual(values = holdout_shapes, limits = names(holdout_shapes), drop = FALSE)
-outcome3_levels <- c("Resistance", "Stress", "Proliferation", "Apoptosis")
-name_outcome3 <- function(x) recode(x, external_resistance_quantile = "Resistance", p_apoptosis = "Apoptosis", p_proliferation = "Proliferation", p_stress = "Stress")
-mix <- read_src("figure3", "mixseq_generalization_summary") %>%
-  filter(model == "baseline_scvi_ridge", metric %in% c("brier", "spearman")) %>%
-  mutate(outcome = factor(name_outcome3(target), levels = outcome3_levels),
-    holdout = recode(validation, leave_cell_line = "Cell line", leave_perturbation = "Perturbation"),
-    y = as.numeric(outcome) + ifelse(holdout == "Cell line", .14, -.14),
-    display = ifelse(metric == "brier", improvement_over_training_mean * 1000, estimate),
-    metric_label = factor(metric, levels = c("brier", "spearman"),
-      labels = c("Brier reduction (\u00d710\u207b\u00b3)", "Spearman correlation")))
-p3a <- ggplot(mix, aes(display, y, colour = holdout, shape = holdout)) +
-  geom_vline(xintercept = 0, linetype = 2, colour = "#B5BAC0", linewidth = .35) +
-  geom_point(size = 2) + facet_wrap(~metric_label, scales = "free_x", nrow = 1) +
-  scale_y_continuous(breaks = 1:4, labels = outcome3_levels, limits = c(.55, 4.45), expand = c(0, 0)) +
-  scale_x_continuous(breaks = scales::breaks_pretty(n = 3), labels = label_number()) +
-  holdout_scale() + holdout_shape_scale() +
-  labs(x = NULL, y = NULL, colour = "Held-out unit", shape = "Held-out unit", title = "MIX-seq prediction") +
-  figure23_theme + theme(legend.position = "none", strip.text = element_text(size = 7, face = "bold"),
-    axis.line.y = element_blank(), axis.ticks.y = element_blank(), panel.spacing.x = unit(5, "mm"))
+mix <- read_src("figure3", "mixseq_generalization_summary") %>% mutate(
+  fate = clean_fate(target), validation = gsub("_", "-", validation), model_label = clean_model(model)
+)
+mix_heat <- mix %>% filter(model == "baseline_scvi_ridge", metric %in% c("brier", "spearman")) %>%
+  mutate(display = ifelse(metric == "brier", improvement_over_training_mean, estimate),
+         metric_label = ifelse(metric == "brier", "Brier improvement", "Spearman"), label = sprintf("%.3f", display))
+p3a <- ggplot(mix_heat, aes(fate, interaction(validation, metric_label, sep = " | "), fill = display)) +
+  geom_tile(colour = "white", linewidth = .5) + geom_text(aes(label = label), size = 1.65) +
+  scale_fill_gradient2(low = pal[["red"]], mid = "white", high = pal[["blue"]], midpoint = 0) +
+  labs(x = NULL, y = NULL, fill = "Performance") + theme(axis.text.x = element_text(angle = 35, hjust = 1), legend.position = "right")
 
 sens <- read_src("figure3", "mixseq_target_sensitivity") %>% filter(metric == "brier") %>%
   select(variant, validation, target, model, mean_value) %>% pivot_wider(names_from = model, values_from = mean_value) %>%
-  mutate(improvement = training_mean - baseline_scvi_ridge)
-sens_summary <- sens %>% group_by(validation, target) %>% summarise(wins = sum(improvement > 0), settings = n(), .groups = "drop") %>%
-  mutate(outcome = factor(name_outcome3(target), levels = outcome3_levels[-1]),
-    holdout = recode(validation, leave_cell_line = "Cell line", leave_perturbation = "Perturbation"),
-    y = as.numeric(outcome) + ifelse(holdout == "Cell line", .14, -.14), label = paste0(wins, "/", settings))
-p3b <- ggplot(sens_summary, aes(wins, y, colour = holdout, shape = holdout)) +
-  geom_segment(aes(x = 0, xend = wins, yend = y), alpha = .25, linewidth = .5) + geom_point(size = 1.8) +
-  geom_text(aes(x = wins + .55, label = label), size = 2.2, hjust = 0, show.legend = FALSE) +
-  scale_y_continuous(breaks = 1:3, labels = outcome3_levels[-1], limits = c(.55, 3.45), expand = c(0, 0)) +
-  scale_x_continuous(limits = c(-.5, 15.2), breaks = c(0, 4, 8, 12), expand = c(0, 0)) +
-  holdout_scale() + holdout_shape_scale() +
-  labs(x = "Target definitions with lower Brier", y = NULL, colour = "Held-out unit", shape = "Held-out unit", title = "Target-definition robustness") +
-  figure23_theme + theme(legend.position = "none", axis.line.y = element_blank(), axis.ticks.y = element_blank())
+  mutate(improvement = training_mean - baseline_scvi_ridge, fate = clean_fate(target), validation = gsub("_", "-", validation))
+sens_summary <- sens %>% group_by(validation, fate) %>% summarise(wins = sum(improvement > 0), settings = n(), .groups = "drop") %>%
+  mutate(label = paste0(wins, "/", settings), fraction = wins / settings)
+p3b <- ggplot(sens_summary, aes(fate, validation, fill = fraction)) + geom_tile(colour = "white", linewidth = .5) +
+  geom_text(aes(label = label), size = 1.8) + scale_fill_gradient(low = "white", high = pal[["blue"]], limits = c(0,1)) +
+  labs(x = NULL, y = NULL, fill = "Brier wins\nacross settings") + theme(axis.text.x = element_text(angle = 35, hjust = 1), legend.position = "right")
 
-ablation3 <- bind_rows(
-  read_src("figure3", "replogle_k562_ablation") %>% mutate(cell_line = "K562"),
-  read_src("figure3", "replogle_rpe1_ablation") %>% mutate(cell_line = "RPE1")) %>%
-  filter(metric %in% c("brier", "spearman")) %>%
-  mutate(outcome = factor(name_outcome3(target), levels = outcome3_levels[-1]),
-    holdout = recode(validation, leave_gem_group = "GEM group", leave_perturbation = "Perturbation"),
-    y = as.numeric(outcome) + ifelse(holdout == "Perturbation", .14, -.14),
-    display = baseline_state_increment * ifelse(metric == "brier", 1000, 1),
-    low = ci_low * ifelse(metric == "brier", 1000, 1), high = ci_high * ifelse(metric == "brier", 1000, 1),
-    metric_label = factor(metric, levels = c("brier", "spearman"),
-      labels = c("Brier reduction (\u00d710\u207b\u00b3)", "Spearman increment")))
-bounds3 <- ablation3 %>% group_by(metric_label) %>% summarise(low = min(low), high = max(high), .groups = "drop") %>%
-  pivot_longer(c(low, high), values_to = "display") %>% mutate(y = 1)
-ablation_plot3 <- function(cell) {
-  ggplot(filter(ablation3, cell_line == cell), aes(display, y, colour = holdout, shape = holdout)) +
-    geom_blank(data = bounds3, aes(display, y), inherit.aes = FALSE) +
-    geom_vline(xintercept = 0, linetype = 2, colour = "#B5BAC0", linewidth = .35) +
-    geom_errorbar(aes(xmin = low, xmax = high), orientation = "y", width = .10, linewidth = .45) + geom_point(size = 1.8) +
-    facet_wrap(~metric_label, scales = "free_x", nrow = 1) +
-    scale_y_continuous(breaks = 1:3, labels = outcome3_levels[-1], limits = c(.55, 3.45), expand = c(0, 0)) +
-    scale_x_continuous(breaks = scales::breaks_pretty(n = 3), labels = label_number()) +
-    holdout_scale() + holdout_shape_scale() +
-    labs(x = "Increment over perturbation descriptors", y = NULL, colour = "Held-out unit", shape = "Held-out unit", title = paste0("Perturb-seq: ", cell)) +
-    figure23_theme + theme(legend.position = "none", axis.line.y = element_blank(), axis.ticks.y = element_blank(),
-      strip.text = element_text(size = 7, face = "bold"), panel.spacing.x = unit(5, "mm"))
+ablation_plot <- function(label, colour) {
+  d <- read_src("figure3", paste0("replogle_", label, "_ablation")) %>%
+    filter(metric %in% c("brier", "spearman")) %>% mutate(fate = clean_fate(target), validation = gsub("_", "-", validation), metric = tools::toTitleCase(metric))
+  ggplot(d, aes(baseline_state_increment, fate, colour = validation)) +
+    geom_vline(xintercept = 0, linetype = 2, colour = pal[["grey"]], linewidth = .3) +
+    geom_errorbar(aes(xmin = ci_low, xmax = ci_high), orientation = "y", width = .18, linewidth = .4) + geom_point(size = 1.4) +
+    facet_wrap(~metric, scales = "free_x") + scale_x_continuous(breaks=function(x) pretty(x,n=2),labels=function(x) format(x,scientific=TRUE,digits=1)) + scale_colour_manual(values = c("leave-perturbation" = colour, "leave-gem-group" = pal[["red"]])) +
+    labs(x = "Baseline-state increment", y = NULL, colour = NULL, title = toupper(label)) + theme(legend.position = "bottom",axis.text.x=element_text(size=5.6,angle=20,hjust=1))
 }
-p3c <- ablation_plot3("K562")
-p3d <- ablation_plot3("RPE1")
+p3c <- ablation_plot("k562", pal[["blue"]])
+p3d <- ablation_plot("rpe1", pal[["teal"]])
+p3d <- p3d + guides(colour = "none")
 
-boot3 <- read.delim(file.path(revision_dir, "replogle_group_bootstrap.tsv")) %>%
-  filter(validation == "leave_gem_group") %>%
-  mutate(outcome = name_outcome3(target), row = paste(outcome, cell_line, sep = " | "),
-    row = factor(row, levels = rev(c("Apoptosis | K562", "Apoptosis | RPE1", "Proliferation | K562", "Proliferation | RPE1", "Stress | K562", "Stress | RPE1"))),
-    holdout = "GEM group")
-p3e <- ggplot(boot3, aes(delta_spearman, row, colour = holdout, shape = holdout)) +
-  geom_vline(xintercept = 0, linetype = 2, colour = "#B5BAC0", linewidth = .35) +
-  geom_hline(yintercept = c(2.5, 4.5), colour = "#EFF0F2", linewidth = .35) +
-  geom_errorbar(aes(xmin = family_ci_low, xmax = family_ci_high), orientation = "y", width = .12, colour = "#B7BEC7", linewidth = .5, show.legend = FALSE) +
-  geom_errorbar(aes(xmin = ci_low, xmax = ci_high), orientation = "y", width = 0, linewidth = 1, show.legend = FALSE) + geom_point(size = 1.9, show.legend = TRUE) +
-  scale_x_continuous(breaks = seq(-.2, .1, .1), limits = c(-.22, .11)) +
-  holdout_scale() + holdout_shape_scale() +
-  labs(x = "Pooled Spearman increment (group-bootstrap intervals)", y = NULL, colour = "Held-out unit", shape = "Held-out unit", title = "Capture-group transfer") +
-  figure23_theme + theme(legend.position = "bottom", axis.line.y = element_blank(), axis.ticks.y = element_blank())
+held <- bind_rows(
+  read_src("figure3", "replogle_k562_ablation") %>% mutate(cell_line = "K562"),
+  read_src("figure3", "replogle_rpe1_ablation") %>% mutate(cell_line = "RPE1")
+) %>% filter(validation == "leave_gem_group", metric == "spearman") %>% mutate(fate = clean_fate(target))
+p3e <- ggplot(held, aes(fate, baseline_state_increment, fill = cell_line)) + geom_hline(yintercept = 0, linetype = 2, colour = pal[["grey"]]) +
+  geom_col(position = position_dodge(width = .72), width = .62) +
+  geom_errorbar(aes(ymin=ci_low,ymax=ci_high),position=position_dodge(width=.72),width=.15,linewidth=.35) +
+  scale_fill_manual(values = c(K562 = pal[["blue2"]], RPE1 = pal[["teal2"]])) +
+  labs(x = NULL, y = "Held-GEM correlation increment", fill = NULL) + theme(legend.position = "bottom")
 
-fig3 <- p3a + p3b + p3c + p3d + p3e +
-  plot_layout(design = "AAAABB\nCCCDDD\nEEEEEE", widths = rep(1, 6), heights = c(.95, 1, 1.05)) +
+fig3 <- (p3a | p3b) / (p3c | p3d) / p3e + plot_layout(heights = c(.9, 1.05, .82)) +
   plot_annotation(tag_levels = "a")
-save_pub(fig3, file.path(main_dir, "Figure3_generalization"), 183, 162)
+save_pub(fig3, file.path(main_dir, "Figure3_generalization"), 183, 155)
 
 # Figure 4 -------------------------------------------------------------------
 figure4_theme <- theme_nc(7.5) + theme(
@@ -501,7 +417,12 @@ save_pub(edfig5,file.path(ext_dir,"ExtendedData5_spatial_audit"),183,105)
 dat <- function(name) read.delim(file.path(project,"results",paste0(name,".tsv")),check.names=FALSE)
 cohort_name <- function(x) recode(x,ispy2="I-SPY2",beataml="BeatAML")
 model_name <- function(x) recode(x,PFE="PFE",clinical="Clinical",clinical_plus_PFE="Clinical + PFE",five_gene="Five genes",clinical_plus_five_gene="Clinical + five genes")
-clinical <- dat("clinical_bootstrap") %>% filter(metric=="auroc") %>% mutate(cohort=cohort_name(cohort),model=model_name(model))
+clinical_reference <- dat("clinical_bootstrap")
+primary_model_map <- c(PFE="PFE", five_gene="five_gene", hr_her2_plus_arm="clinical", hr_her2_plus_arm_plus_PFE="clinical_plus_PFE", hr_her2_plus_arm_plus_five_gene="clinical_plus_five_gene")
+clinical_adjusted <- dat("ispy2_arm_adjustment_pooled_metrics") %>% filter(model %in% names(primary_model_map)) %>%
+  mutate(cohort="ispy2", model=unname(primary_model_map[model])) %>% select(all_of(names(clinical_reference)))
+clinical <- bind_rows(clinical_adjusted, clinical_reference %>% filter(cohort=="beataml")) %>%
+  filter(metric=="auroc") %>% mutate(cohort=cohort_name(cohort),model=model_name(model))
 p6b <- ggplot(clinical,aes(estimate,model,colour=cohort))+geom_vline(xintercept=.5,linetype=2,colour=pal[["light"]])+geom_errorbar(aes(xmin=ci_low,xmax=ci_high),orientation="y",width=.18,position=position_dodge(width=.45),linewidth=.4)+geom_point(size=1.4,position=position_dodge(width=.45))+scale_colour_manual(values=c(`I-SPY2`=pal[["blue"]],BeatAML=pal[["teal"]]))+labs(x="Pooled out-of-fold AUROC (95% CI)",y=NULL,colour=NULL)+theme(legend.position="bottom",axis.text.y=element_text(size=6.4))
 ann <- dat("clinical_annotation_response") %>% mutate(cohort=cohort_name(cohort),label=gsub("−","-",label)) %>% filter(n>=10)
 p6c <- ggplot(ann,aes(label,fraction,fill=cohort))+geom_col(width=.65)+geom_errorbar(aes(ymin=ci_low,ymax=ci_high),width=.15,linewidth=.35)+geom_text(aes(label=paste0("n=",n)),y=.98,size=2)+facet_wrap(~cohort,scales="free_x")+scale_fill_manual(values=c(`I-SPY2`=pal[["blue2"]],BeatAML=pal[["teal2"]]))+scale_y_continuous(labels=percent,limits=c(0,1.04))+labs(x=NULL,y="Observed response fraction (95% CI)")+theme(legend.position="none",axis.text.x=element_text(angle=35,hjust=1,size=6))
