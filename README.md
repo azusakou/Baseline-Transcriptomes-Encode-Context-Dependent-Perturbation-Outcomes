@@ -20,6 +20,10 @@ python code/replay_summary.py
 
 This checks the released prediction/target results. It does not retrain encoders or substitute for an independent reanalysis.
 
+## Figures from the compact numerical sources
+
+Unpack `derived_data.zip` in this directory, then run `Rscript code/make_figures.R`. Required R packages are ggplot2, patchwork, dplyr, tidyr, scales, ggrepel, svglite and ragg. Outputs go to `output/`. This recreates the figures from the released numerical sources.
+
 ## Full reanalysis
 
 Unpack `source_workflow.zip` and obtain source data using `config/download_manifest.tsv` and the data-staging scripts. Keep the original staged/processed/results layout documented by those scripts. Unpack `derived_data.zip` into the same project directory; its `tables` directory supplies the exact outcome definitions used here. Raw expression matrices are intentionally not duplicated in this release.
