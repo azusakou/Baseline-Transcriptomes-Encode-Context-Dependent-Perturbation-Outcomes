@@ -82,7 +82,13 @@ save_pub <- function(plot, filename, width_mm=183, height_mm=145, dpi=300) {
   selection <- strsplit(Sys.getenv("FIGURE_SELECTION", ""), ",", fixed = TRUE)[[1]]
   if (length(selection) && nzchar(selection[1]) && !base %in% selection) return(invisible(NULL))
   if(base %in% names(aliases)) filename <- file.path(dirname(filename), aliases[[base]])
-  grDevices::pdf(paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica",useDingbats=FALSE)
+  if (base %in% c("Figure4_mechanism_axes", "Figure5_spatial_niches") && capabilities("aqua")) {
+    grDevices::quartz(type="pdf",file=paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica")
+  } else if (base %in% c("Figure4_mechanism_axes", "Figure5_spatial_niches") && capabilities("cairo")) {
+    grDevices::cairo_pdf(paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica")
+  } else {
+    grDevices::pdf(paste0(filename,".pdf"),width=width_mm/25.4,height=height_mm/25.4,family="Helvetica",useDingbats=FALSE)
+  }
   print(plot);dev.off()
   ragg::agg_png(file.path(main_dir,paste0(basename(filename),".png")),width=width_mm/25.4,height=height_mm/25.4,units="in",res=200,background="white")
   print(plot);dev.off()
@@ -232,49 +238,109 @@ fig3 <- (p3a | p3b) / (p3c | p3d) / p3e + plot_layout(heights = c(.9, 1.05, .82)
 save_pub(fig3, file.path(main_dir, "Figure3_generalization"), 183, 155)
 
 # Figure 4 -------------------------------------------------------------------
+figure4_theme <- theme_nc(7.5) + theme(
+  plot.title = element_text(size = 8.2, face = "bold", margin = margin(b = 5)),
+  axis.title = element_text(size = 7.5), axis.text = element_text(size = 7),
+  legend.text = element_text(size = 6.8), legend.key.width = unit(4, "mm"),
+  plot.margin = margin(4, 5, 3, 3)
+)
+
 wot <- read_src("figure4", "wot_replicate_metrics") %>% mutate(model_label = clean_model(model))
-wot_macro <- wot %>% filter(branch == "macro", metric == "brier")
-p4a <- ggplot(wot_macro, aes(reorder(model_label, value, FUN = mean), value, colour = model_label)) +
-  geom_point(position = position_jitter(width = .06), size = 1.1, alpha = .7) +
-  stat_summary(fun = mean, geom = "point", shape = 18, size = 2.3) +
-  scale_y_log10(labels = label_scientific()) +
+wot_macro <- wot %>% filter(branch == "macro", metric == "brier") %>%
+  mutate(model_label = factor(model_label, levels = c("training mean", "biological programs", "baseline latent")))
+wot_summary <- wot_macro %>% group_by(model_label) %>%
+  summarise(value = mean(value), low = min(value), high = max(value), .groups = "drop")
+p4a <- ggplot(wot_macro, aes(value, model_label, colour = model_label)) +
+  geom_segment(data = wot_summary, aes(x = low, xend = high, yend = model_label), linewidth = .65, alpha = .55) +
+  geom_point(size = 1.5, alpha = .6, position = position_jitter(height = .10, width = 0, seed = 401)) +
+  geom_point(data = wot_summary, shape = 18, size = 2.5) +
   scale_colour_manual(values = c("baseline latent" = pal[["blue"]], "biological programs" = pal[["teal"]], "training mean" = pal[["grey"]])) +
-  labs(x = NULL, y = "WOT macro Brier (log scale)") + theme(axis.text.x = element_text(angle = 25, hjust = 1), legend.position = "none")
+  scale_y_discrete(labels = c("baseline latent" = "Baseline state", "biological programs" = "Biological programs", "training mean" = "Training mean")) +
+  scale_x_log10(breaks = c(5e-6, 1e-5, 2e-5, 5e-5), labels = c("5", "10", "20", "50"), expand = expansion(mult = c(.10, .10))) +
+  labs(x = expression("Macro Brier score ("*10^{-6}*"; log scale)"), y = NULL, title = "Transport-derived branch targets") +
+  figure4_theme + theme(legend.position = "none", axis.line.y = element_blank(), axis.ticks.y = element_blank())
 
-cross <- read_src("figure4", "cross_task_dataset_metrics") %>% filter(metric == "spearman", model != "training_mean") %>%
-  group_by(validation, target, model) %>% summarise(value = mean(value, na.rm = TRUE), .groups = "drop") %>%
-  mutate(target = clean_fate(target), validation = gsub("_", " ", validation), label = ifelse(is.finite(value), sprintf("%.2f", value), "NA"))
-p4b <- ggplot(cross, aes(target, validation, fill = value)) + geom_tile(colour = "white", linewidth = .45) + geom_text(aes(label = label), size = 1.45) +
-  scale_fill_gradient2(low = pal[["red"]], mid = "white", high = pal[["blue"]], midpoint = 0, na.value = pal[["light"]]) +
-  labs(x = NULL, y = NULL, fill = "Spearman") + theme(axis.text.x = element_text(angle = 35, hjust = 1), axis.text.y = element_text(size = 6))
+cross_raw <- read_src("figure4", "cross_task_dataset_metrics") %>%
+  filter(metric == "spearman", model != "training_mean") %>%
+  mutate(transfer = factor(validation, levels = c("leave_dataset_cross_platform_stress", "leave_dataset_larry_primary", "leave_task")),
+         outcome = recode(target, relative_entropy = "Entropy", relative_rare_fate = "Rare fate"),
+         y = as.numeric(transfer) + ifelse(outcome == "Entropy", .13, -.13))
+cross <- cross_raw %>% group_by(transfer, outcome, y) %>% summarise(value = mean(value), .groups = "drop")
+p4b <- ggplot(cross_raw, aes(value, y, colour = outcome)) +
+  geom_vline(xintercept = 0, linetype = 2, colour = "#B5BAC0", linewidth = .35) +
+  geom_point(size = 1.1, alpha = .38, position = position_jitter(height = .035, width = 0, seed = 402)) +
+  geom_point(data = cross, aes(shape = outcome), size = 2.2) +
+  scale_shape_manual(values = c(Entropy = 16, `Rare fate` = 17)) +
+  scale_colour_manual(values = c(Entropy = pal[["blue"]], `Rare fate` = pal[["teal"]])) +
+  scale_y_continuous(breaks = 1:3, labels = c("Cross-platform", "LARRY dataset", "Cytokine task"), limits = c(.55, 3.45), expand = c(0, 0)) +
+  scale_x_continuous(breaks = seq(-.1, .2, .1), limits = c(-.17, .25)) +
+  labs(x = "Held-group Spearman correlation", y = NULL, colour = NULL, shape = NULL, title = "Cross-context transfer") +
+  figure4_theme + theme(legend.position = "bottom", axis.line.y = element_blank(), axis.ticks.y = element_blank())
 
-axes <- read_src("figure4", "top_stable_biological_axes") %>% filter(target %in% c("p_apoptosis", "p_proliferation", "p_stress")) %>%
+axes <- read_src("figure4", "top_stable_biological_axes") %>%
+  filter(target %in% c("p_apoptosis", "p_proliferation", "p_stress")) %>%
   group_by(target) %>% slice_max(abs(mean_coefficient), n = 5, with_ties = FALSE) %>% ungroup() %>%
-  mutate(feature = sub("^[^_]+__", "", feature), target = clean_fate(target), feature_order = reorder_within(feature, mean_coefficient, target))
-p4c <- ggplot(axes, aes(mean_coefficient, feature_order, fill = mean_coefficient > 0)) + geom_col(width = .66) +
-  facet_wrap(~target, scales = "free_y") + scale_y_reordered() + scale_fill_manual(values = c(`TRUE` = pal[["blue"]], `FALSE` = pal[["red"]]),labels=c(`TRUE`="Positive",`FALSE`="Negative"),name="Coefficient") +
-  scale_x_continuous(breaks=c(-.01,0,.01),labels=label_number(accuracy=.01)) +
-  labs(x = "Mean standardized conditional coefficient", y = NULL) + theme(legend.position = "bottom", axis.text.y = element_text(size = 6), axis.text.x = element_text(size = 5), strip.text = element_text(size = 5.5))
+  mutate(feature = sub("^[^_]+__", "", feature), feature = recode(feature, HEME_METABOLISM = "Heme metabolism"),
+         outcome = factor(target, levels = c("p_apoptosis", "p_proliferation", "p_stress"), labels = c("Apoptosis", "Proliferation", "Stress")),
+         feature_order = reorder_within(feature, mean_coefficient, outcome),
+         coefficient = mean_coefficient * 1000, coefficient_sd = sd_coefficient * 1000,
+         direction = ifelse(mean_coefficient > 0, "Positive", "Negative"))
+coef_limit <- ceiling(max(abs(axes$coefficient) + axes$coefficient_sd) / 5) * 5
+p4c <- ggplot(axes, aes(coefficient, feature_order, colour = direction)) +
+  geom_vline(xintercept = 0, colour = "#C9CDD1", linewidth = .4) +
+  geom_segment(aes(x = 0, xend = coefficient, yend = feature_order), linewidth = .5, alpha = .35) +
+  geom_errorbar(aes(xmin = coefficient - coefficient_sd, xmax = coefficient + coefficient_sd), orientation = "y", width = .15, linewidth = .45) +
+  geom_point(size = 2) + facet_wrap(~outcome, scales = "free_y", nrow = 1) + scale_y_reordered() +
+  scale_colour_manual(values = c(Positive = pal[["blue"]], Negative = pal[["red"]]), breaks = c("Positive", "Negative")) +
+  guides(colour = guide_legend(override.aes = list(shape = 16, linewidth = 0, alpha = 1))) +
+  scale_x_continuous(limits = c(-coef_limit, coef_limit), breaks = c(-10, 0, 10), expand = expansion(mult = .06)) +
+  labs(x = expression("Conditional coefficient ("*10^{-3}*")"), y = NULL, colour = NULL, title = "Outcome-associated transcriptional features") +
+  figure4_theme + theme(legend.position = "bottom", legend.key.height = unit(2.5, "mm"), legend.margin = margin(t = 0, b = 0), strip.text = element_text(size = 7.5, face = "bold"),
+    axis.line.y = element_blank(), axis.ticks.y = element_blank(), panel.spacing.x = unit(7, "mm"))
 
-stab <- read_src("figure4", "axis_stability_counts") %>% mutate(fate = clean_fate(target), fraction = stable_axes / total_axes)
-null <- read.delim(file.path(project,"results/axis_permutation_summary.tsv")) %>% mutate(fate=clean_fate(target))
-p4d <- ggplot(null,aes(null_mean,fate))+geom_errorbar(aes(xmin=null_low,xmax=null_high),orientation="y",width=.2,colour=pal[["grey"]],linewidth=.7)+geom_point(aes(colour="Permutation mean"),size=1.8)+geom_point(aes(x=observed,colour="Observed"),shape=18,size=2.2)+scale_colour_manual(values=c(Observed=pal[["blue"]],`Permutation mean`=pal[["grey"]]))+labs(x="Sign-stable axes (of 640)",y=NULL,colour=NULL)+theme(legend.position="bottom")
+null_dir <- file.path(project, "results")
+null_raw <- read.delim(file.path(null_dir, "axis_permutation.tsv")) %>% filter(replicate >= 0)
+stopifnot(all(table(null_raw$target) == 499))
+null <- read.delim(file.path(null_dir, "axis_permutation_summary.tsv"))
+fate_labels <- c(p_apoptosis = "Apoptosis", p_proliferation = "Proliferation", p_stress = "Stress", external_resistance_quantile = "Resistance")
+fate_levels <- rev(names(fate_labels))
+null_raw$fate <- factor(null_raw$target, levels = fate_levels, labels = fate_labels[fate_levels])
+null <- null %>% mutate(fate = factor(target, levels = fate_levels, labels = fate_labels[fate_levels]), q_label = sprintf("q = %.2f", qvalue))
+p4d <- ggplot(null_raw, aes(stable_axes, fate)) +
+  geom_violin(orientation = "y", fill = "#E5E8EC", colour = "#C5CAD1", linewidth = .3, width = .72, scale = "width", trim = TRUE) +
+  geom_errorbar(data = null, aes(x = null_mean, xmin = null_low, xmax = null_high), orientation = "y", width = .14, linewidth = .55, colour = "#89929C") +
+  geom_point(data = null, aes(x = null_mean, colour = "Null mean"), size = 1.8) +
+  geom_point(data = null, aes(x = observed, colour = "Observed"), shape = 18, size = 2.7) +
+  geom_text(data = null, aes(x = 352, label = q_label), colour = pal[["ink"]], size = 2.45, hjust = 1) +
+  scale_colour_manual(values = c(Observed = pal[["blue"]], `Null mean` = "#747F8B"), breaks = c("Observed", "Null mean")) +
+  scale_x_continuous(limits = c(235, 354), breaks = c(250, 275, 300, 325, 350), expand = expansion(mult = c(0, .015))) +
+  labs(x = "Sign-stable axes among 640 features", y = NULL, colour = NULL, title = "Sign stability against the permutation null") +
+  figure4_theme + theme(legend.position = "bottom", axis.line.y = element_blank(), axis.ticks.y = element_blank())
 
-vel <- read_src("figure4", "velocity_eligibility") %>% mutate(dataset = sub("\\.h5ad$", "", file), eligible = ifelse(rna_velocity_eligible == "True", "eligible", "ineligible"))
-p4e <- ggplot(vel, aes(1, reorder(dataset, cells), fill = eligible)) + geom_tile(colour = "white", width = .65) +
-  geom_text(aes(label = paste0(format(cells, big.mark = ","), " cells\nno spliced/unspliced")), size = 1.55) +
-  scale_fill_manual(values = c(ineligible = pal[["light"]], eligible = pal[["teal"]])) + scale_x_continuous(NULL, breaks = NULL) + labs(y = NULL) + theme(legend.position = "none")
-
-fig4 <- p4a + p4b + p4c + p4d + plot_layout(design = "AABB\nCCCC\nDDDD",heights=c(1,1,.65)) + plot_annotation(tag_levels = "a") &
-  theme(plot.tag.position = c(.01, .99))
-save_pub(fig4, file.path(main_dir, "Figure4_mechanism_axes"), 183, 155)
+fig4 <- p4a + p4b + p4c + p4d + plot_layout(design = "AABB\nCCCC\nDDDD", widths = c(1, 1, 1.2, 1.2), heights = c(.92, 1.14, .98)) +
+  plot_annotation(tag_levels = "a")
+save_pub(fig4, file.path(main_dir, "Figure4_mechanism_axes"), 183, 149)
 
 # Figure 5 -------------------------------------------------------------------
 spcells <- read_src("figure5", "representative_spatial_cells")
-p5a <- ggplot(spcells, aes(x, y, colour = intrinsic_resistance_ecosystem)) + geom_point(size = .16, alpha = .9) +
-  scale_colour_gradient2(low = pal[["blue2"]], mid = "white", high = pal[["red"]], midpoint = 0, limits = quantile(spcells$intrinsic_resistance_ecosystem, c(.02,.98), na.rm = TRUE), oob = squish) +
-  annotate("segment",x=6200,xend=6700,y=15700,yend=15700,linewidth=.8,colour="black") + annotate("text",x=6450,y=15570,label="500 \u00b5m",size=2) + coord_fixed() + labs(x = NULL, y = NULL, colour = "Resistance\necosystem", title = "Representative baseline region") +
-  theme_void(base_size=6.5,base_family = "Helvetica") + theme(plot.title = element_text(size = 6.8, face = "bold"), legend.position = "right",legend.title=element_text(size=6),legend.text=element_text(size=5.5))
+spatial_x <- range(spcells$x)
+spatial_y <- range(spcells$y)
+bar_x <- spatial_x[1] + 80
+bar_y <- spatial_y[1] - 130
+p5a <- ggplot(spcells, aes(x, y, colour = intrinsic_resistance_ecosystem)) +
+  geom_point(size = .45, alpha = .95, stroke = 0) +
+  scale_colour_gradient2(low = "#3D739F", mid = "#D5DADF", high = "#B7504C", midpoint = 0,
+    limits = quantile(spcells$intrinsic_resistance_ecosystem, c(.02, .98), na.rm = TRUE), oob = squish,
+    breaks = c(-.5, 0, .5, 1), guide = guide_colourbar(title.position = "top", title.hjust = .5,
+      barwidth = unit(27, "mm"), barheight = unit(2.7, "mm"))) +
+  annotate("segment", x = bar_x, xend = bar_x + 500, y = bar_y, yend = bar_y, linewidth = .9, colour = pal[["ink"]]) +
+  annotate("text", x = bar_x + 250, y = bar_y - 100, label = "500 \u00b5m", size = 2.6, colour = pal[["ink"]]) +
+  coord_fixed(xlim = spatial_x + c(-70, 70), ylim = spatial_y + c(-280, 60), expand = FALSE) +
+  labs(x = NULL, y = NULL, colour = "Resistance-ecosystem score", title = "Baseline region (su001)") +
+  theme_void(base_size = 7.5, base_family = "Helvetica") +
+  theme(plot.title = element_text(size = 8.1, face = "bold", hjust = .5, margin = margin(b = 4)),
+    legend.position = "bottom", legend.title = element_text(size = 7), legend.text = element_text(size = 6.5),
+    plot.margin = margin(4, 5, 2, 3))
 
 moran <- read_src("figure5", "spatial_autocorrelation") %>% mutate(feature = clean_fate(sub("^intrinsic_", "", feature)), label = sprintf("%.2f", moran_i))
 p5b <- ggplot(moran, aes(feature, sample, fill = moran_i)) + geom_tile(colour = "white", linewidth = .35) + geom_text(aes(label = label), size = 1.35) +
@@ -304,8 +370,13 @@ p5f <- ggplot(sqc, aes(label, value, group = comparison, colour = comparison)) +
   scale_colour_manual(values = c(Moran = pal[["blue"]], `Patient axes` = pal[["teal"]])) + coord_cartesian(ylim = c(.95,1.005)) +
   labs(x = "Minimum transcripts (primary = 5)", y = "Concordance with primary", colour = NULL) + theme(legend.position = "bottom")
 
-fig5 <- p5a + p5b + p5c + p5d + p5e + p5f + plot_layout(design = "AABB\nCCDD\nEEFF") + plot_annotation(tag_levels = "a")
-save_pub(fig5, file.path(main_dir, "Figure5_spatial_niches"), 183, 158)
+p5a <- wrap_elements(full = p5a)
+p5d <- p5d + theme(legend.position = "bottom", legend.direction = "horizontal")
+p5f <- p5f + labs(y = "Concordance")
+fig5 <- p5a + p5b + p5c + p5d + p5e + p5f +
+  plot_layout(design = "AABB\nAACC\nDDDD\nEEFF", widths = c(1, 1, 1.05, 1.05), heights = c(1.05, 1, .78, .85)) +
+  plot_annotation(tag_levels = "a")
+save_pub(fig5, file.path(main_dir, "Figure5_spatial_niches"), 183, 179)
 
 # Extended Data 2 ------------------------------------------------------------
 ed2 <- read_src("extended_data2", "mixseq_complete_sensitivity") %>% filter(metric=="brier") %>%
